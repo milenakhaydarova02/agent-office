@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>Agent Office</title>
+<style>
+  :root {
+    --bar: #0d0b1a;
+    --ink: #f8f8f8;
+    --dim: #8a8a9a;
+    --hot: #f8d838;
+  }
+  html, body {
+    margin: 0;
+    background: #000;
+    color: var(--ink);
+    overflow: hidden;
+    user-select: none;
+    font: bold 11px Consolas, "Courier New", monospace;
+  }
+  #bar {
+    height: 20px;
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    padding: 0 4px;
+    background: var(--bar);
+    border-bottom: 1px solid #2a2a38;
+    box-sizing: border-box;
+    -webkit-app-region: drag;
+  }
+  #title {
+    flex: 1;
+    color: var(--hot);
+    letter-spacing: 1px;
+    white-space: nowrap;
+    overflow: hidden;
+  }
+  #bar button {
+    -webkit-app-region: no-drag;
+    background: none;
+    border: 1px solid transparent;
+    color: var(--ink);
+    font: inherit;
+    height: 16px;
+    padding: 0 5px;
+    cursor: pointer;
+    line-height: 14px;
+  }
+  #bar button:hover { border-color: #4a4a5a; background: #1c1a2c; }
+  #bar button.off { color: var(--dim); }
+  #bar button.win { width: 20px; padding: 0; }
+  #bar button.close:hover { background: #a81000; }
+  canvas { display: block; image-rendering: pixelated; }
+  body.browser #bar .win { display: none; }
+  body.saver #bar { display: none; }
+  body.saver, body.saver canvas { cursor: none; }
+</style>
+</head>
+<body>
+<div id="bar">
+  <span id="title">★ AGENT OFFICE</span>
+  <button id="demo" title="Показать демо-сценарий (D)">ДЕМО</button>
+  <button id="game" title="Забег Claude, пока ждёшь ответа (Пробел). Esc — обратно в офис">▸ ИГРА</button>
+  <button id="sound" title="Звук вкл/выкл (M)">♪ ВКЛ</button>
+  <button id="saver" title="Через сколько минут простоя офис разворачивается на весь экран (S — включить сейчас)">◷ 2 МИН</button>
+  <button id="scale" title="Размер окна">×2</button>
+  <button id="pin" class="win" title="Поверх всех окон">▲</button>
+  <button id="min" class="win" title="Свернуть">_</button>
+  <button id="close" class="win close" title="Закрыть">✕</button>
+</div>
+<canvas id="screen"></canvas>
+<script src="font.js"></script>
+<script src="sound.js"></script>
+<script src="sprites.js"></script>
+<script src="scene.js"></script>
+<script src="light.js"></script>
+<script src="runner.js"></script>
+<script src="game.js"></script>
+</body>
+</html>
