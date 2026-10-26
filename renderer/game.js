@@ -173,6 +173,11 @@
   claude.goalSpot = SPOT.claudeSit;
   const cat = new Agent({ id: 'cat', f: 1, x: 70, speed: 0.75, quiet: true, goalPose: 'sit', catPose: 'sit' });
   cat.isCat = true;
+  // The dog lives on the first floor (no ladders for him) and now and then chases the cat around it.
+  const dog = new Agent({ id: 'dog', f: 1, x: 150, speed: 0.9, quiet: true, goalPose: 'sit', dogPose: 'sit' });
+  dog.isCat = true; // no yawns, no people stuff
+  const play = { on: false, next: 25 };
+  let guests = [];
   let subs = [];
   let npcs = [];
   let particles = [];
@@ -1009,6 +1014,135 @@
     }
   }
 
+  // ---------------------------------------------------------------- dog and cat
+  const WOOF = ['ГАВ!', 'ГАВ-ГАВ!', 'ВУФ!', 'ТЯФ!'];
+  const PLAY_TALK = ['ОПЯТЬ ОНИ НОСЯТСЯ', 'ПЁС, НЕ ОБИЖАЙ КОТА', 'ДРУЗЬЯ НАВЕКИ', 'КТО КОГО ДОГОНИТ?'];
+  const floor1 = (x) => Math.round(Math.min(238, Math.max(14, x)));
+
+  function dogIdle() {
+    if (play.on || !dog.arrived || now < (dog.next || 0)) return;
+    const r = Math.random();
+    if (r < 0.3) { dog.go({ f: 1, x: 226, pose: 'sleep' }); dog.next = now + 25 + Math.random() * 20; }
+    else { dog.go({ f: 1, x: floor1(20 + Math.random() * 216), pose: r < 0.7 ? 'sit' : 'sleep' }); dog.next = now + 8 + Math.random() * 12; }
+  }
+
+  // Cat comes down, the dog barks, they chase each other a few laps, then nap side by side.
+  function startPlay() {
+    play.on = true;
+    cat.next = dog.next = now + 120;
+    log('ПЁС И КОТ ИГРАЮТ');
+    cat.go({ f: 1, x: floor1(dog.x + (dog.x < 128 ? 30 : -30)), pose: 'sit' }, () => {
+      dog.go({ f: 1, x: floor1(cat.x + (cat.x > dog.x ? -12 : 12)), pose: 'sit', face: cat.x > dog.x ? 1 : -1 }, () => {
+        dog.say(pick(WOOF), 1.2);
+        Sound.bark();
+        shot(dog, 7, 0.6);
+        later(1, () => chase(3 + Math.floor(Math.random() * 3)));
+      });
+    });
+  }
+
+  function chase(n) {
+    if (!n) {
+      cat.speed = 0.75;
+      dog.speed = 0.9;
+      const x = floor1(40 + Math.random() * 170);
+      cat.go({ f: 1, x, pose: 'sleep' });
+      dog.go({ f: 1, x: floor1(x + 13), pose: 'sleep', face: -1 }, () => {
+        for (let i = 0; i < 4; i++) puff(x + 6 + (Math.random() - 0.5) * 10, FLOOR[1] - 10, 'rgba(248,120,160,0.95)', -10 - Math.random() * 6, 1.4, (Math.random() - 0.5) * 8);
+      });
+      if (isFree(claude) && Math.random() < 0.5) claude.say(pick(PLAY_TALK), 2.4);
+      cat.next = dog.next = now + 20 + Math.random() * 15;
+      play.on = false;
+      play.next = now + 60 + Math.random() * 60;
+      return;
+    }
+    // the cat dashes off, the dog follows a moment later
+    let x = floor1(20 + Math.random() * 216);
+    if (Math.abs(x - cat.x) < 40) x = floor1(cat.x > 128 ? x - 90 : x + 90);
+    cat.speed = 2;
+    dog.speed = 1.8;
+    cat.go({ f: 1, x, pose: 'sit' }, () => { if (Math.random() < 0.4) Sound.meow(); });
+    later(0.5, () => {
+      const dir = x > dog.x ? 1 : -1;
+      dog.go({ f: 1, x: floor1(x - dir * 12), pose: 'sit', face: dir }, () => {
+        if (Math.random() < 0.6) { dog.say(pick(WOOF), 1); Sound.bark(); }
+        later(0.6, () => chase(n - 1));
+      });
+    });
+  }
+
+  // ---------------------------------------------------------------- guests
+  // Now and then somebody drops in: through the door, a short chat with whoever is free, and off again.
+  const GUEST_TALK = [
+    ['ПРИВЕТ! Я СОСЕД СВЕРХУ', 'ЗАХОДИ! КОФЕ БУДЕШЬ?', 'НЕ, ПРОСТО ГЛЯНУТЬ'],
+    ['У ВАС ВАЙ-ФАЙ ЕСТЬ?', 'ЕСТЬ, ПАРОЛЬ НА ДОСКЕ', 'ЭТО ЖЕ 12345678...'],
+    ['А ГДЕ ТУТ НЕЙРОСЕТИ?', 'ТЫ С ОДНОЙ ГОВОРИШЬ', 'ОГО, ВЫ ЖИВЫЕ!'],
+    ['КУРЬЕР! РАСПИШИТЕСЬ', 'А ЧТО ТАМ?', 'НОВЫЕ КЛАВИАТУРЫ'],
+    ['Я НА СОБЕСЕДОВАНИЕ', 'ТЕБЕ К КОТУ, ОН ТИМЛИД', 'ПОНЯЛ, ИДУ К КОТУ'],
+    ['САНТЕХНИКА ВЫЗЫВАЛИ?', 'НЕТ, НО ЧАЙНИК ТЕЧЁТ', 'ЩАС ГЛЯНУ'],
+    ['МОЖНО ПОГРЕТЬСЯ?', 'КОНЕЧНО, У СЕРВЕРОВ ТЕПЛО', 'КАЙФ...'],
+    ['ЭТО ТУТ ДЕЛАЮТ ИГРЫ?', 'ТУТ ДЕЛАЮТ ВСЁ', 'ТОГДА СДЕЛАЙТЕ МНЕ ГТА'],
+    ['ПЁСИК ВАШ? КЛАССНЫЙ', 'ОН ГЛАВНЫЙ ПО КОТУ', 'ЛОГИЧНО'],
+    ['Я ЗА ПИЦЦЕЙ ПРИШЁЛ', 'ПИЦЦУ УЖЕ СЪЕЛИ', 'ЭХ, ОПЯТЬ ОПОЗДАЛ'],
+  ];
+
+  function spawnGuest() {
+    const [l, r] = edges();
+    const fromLeft = Math.random() < 0.5;
+    const g = new Agent({ f: 0, x: fromLeft ? l : r, look: makeExtraLook(70 + Math.floor(Math.random() * 60)), quiet: true, kind: 'guest', speed: 0.8 });
+    guests.push(g);
+    log('В ОФИС ЗАШЁЛ ГОСТЬ');
+    const talk = pick(GUEST_TALK);
+    const out = () => g.go({ f: 1, x: SPOT.door.x, pose: 'stand', face: 1 }, () => {
+      openDoor();
+      g.fadeTo = 0;
+      later(0.5, () => {
+        Object.assign(g, { f: 0, y: FLOOR[0], inside: false, path: [], alpha: 0, fadeTo: 1 });
+        g.go({ f: 0, x: fromLeft ? l : r, pose: 'stand' }, () => { g.gone = true; });
+      });
+    });
+    g.go({ f: 0, x: SPOT.door.x, pose: 'stand', face: 1 }, () => {
+      openDoor();
+      g.fadeTo = 0;
+      later(0.5, () => {
+        Object.assign(g, { f: 1, y: FLOOR[1], x: SPOT.door.x, inside: true, path: [], alpha: 0, fadeTo: 1 });
+        const host = isFree(claude) ? claude : isFree(qwen) ? qwen : null;
+        if (!host) {
+          // nobody free: a word with the cat and off
+          g.go({ f: 1, x: 204, pose: 'talk', face: -1 }, () => {
+            g.say(talk[0], 3);
+            later(3.4, () => { cat.say(pick(MEOW), 1.6); Sound.meow(); });
+            later(5.4, () => { g.say('ЛАДНО, ЗАЙДУ ПОТОМ', 2.4); later(2.6, out); });
+          });
+          return;
+        }
+        stopFun(host);
+        const entry = { act: { id: 'guest', act: 'БОЛТАЕТ С ГОСТЕМ', dur: 0 }, until: now + 40, spot: null, partner: null };
+        fun.set(host, entry);
+        if (host === claude) C.activity = entry.act.act;
+        const still = () => fun.get(host) === entry;
+        host.go({ f: 1, x: 196, pose: 'talk', face: 1 });
+        // the host answers once he has walked over (or gave up waiting after a while)
+        const whenHere = (fn, tries = 40) => (host.arrived || !tries ? fn() : later(0.3, () => whenHere(fn, tries - 1)));
+        g.go({ f: 1, x: 212, pose: 'talk', face: -1 }, () => whenHere(() => {
+          shot(g, 9, 0.7);
+          g.say(talk[0], 3);
+          later(3.4, () => { if (still()) host.say(talk[1], 3); });
+          later(6.8, () => g.say(talk[2], 3));
+          later(10, () => {
+            if (still()) {
+              fun.delete(host);
+              host.nextFun = now + 2;
+              if (host === claude) C.activity = 'ОТДЫХАЕТ';
+              else qwenRoutine();
+            }
+            out();
+          });
+        }));
+      });
+    });
+  }
+
   function launchPlane() {
     const [l, r] = edges();
     const high = saver.on && saver.by > 24;
@@ -1065,6 +1199,13 @@
       else if (r < 0.4) { cat.go({ f: claude.f, x: claude.x + (claude.face > 0 ? -12 : 12), pose: 'sit' }, () => { if (Math.random() < 0.5) Sound.meow(); }); cat.next = now + 8; }
       else { const f = pick([1, 2, 3]); cat.go({ f, x: 20 + Math.random() * 216, pose: Math.random() < 0.5 ? 'sit' : 'sleep' }); cat.next = now + 6 + Math.random() * 10; }
     }
+    dogIdle();
+    if (!play.on && now > play.next && cat.arrived && dog.arrived && !Runner.on) startPlay();
+    // a guest every few minutes, never two at once
+    if (now > (EVT.nextGuest ??= 90 + Math.random() * 120) && !guests.length && !Runner.on && !saver.on) {
+      EVT.nextGuest = now + 180 + Math.random() * 240;
+      spawnGuest();
+    }
     // passing car
     if (scene.carX === null && now > scene.nextCar) {
       scene.carX = -74 - (saver.on ? saver.bx : 0);
@@ -1118,7 +1259,11 @@
     updateHelpers(dt);
     for (const n of npcs) n.update(dt);
     npcs = npcs.filter((n) => !n.gone);
+    for (const g of guests) g.update(dt);
+    guests = guests.filter((g) => !g.gone);
     cat.update(dt);
+    dog.update(dt);
+    dog.dogPose = dog.arrived ? dog.goalPose : 'walk';
     updatePong(dt);
     if (scene.plane) {
       scene.plane.x += 22 * dt;
@@ -1219,7 +1364,13 @@
     const list = [claude, qwen, ...subs, ...helpers];
     const hit = list.reverse().find((a) => a.alpha > 0.5 && Math.abs(x - a.x) <= 7 && y >= a.y - 27 && y <= a.y + 1);
     if (hit) { Sound.init(); poke(hit); return; }
-    if (Math.abs(x - cat.x) <= 9 && y >= cat.y - 12 && y <= cat.y + 1) { Sound.init(); poke(cat); }
+    if (Math.abs(x - cat.x) <= 9 && y >= cat.y - 12 && y <= cat.y + 1) { Sound.init(); poke(cat); return; }
+    if (Math.abs(x - dog.x) <= 9 && y >= dog.y - 12 && y <= dog.y + 1) {
+      Sound.init();
+      dog.say(pick(WOOF), 1.4);
+      Sound.bark();
+      for (let i = 0; i < 4; i++) puff(dog.x + (Math.random() - 0.5) * 8, dog.y - 10, 'rgba(248,120,160,0.95)', -10 - Math.random() * 6, 1.2, (Math.random() - 0.5) * 8);
+    }
   });
 
   // ---------------------------------------------------------------- camera
@@ -1351,6 +1502,12 @@
     if (cat.pose === 'climb') return drawCatClimb();
     const img = Sprites.cat(pose, f, cat.face < 0 ? -1 : 1);
     spr(img, Math.round((cat.x - 8) * S), Math.round((cat.y - 10) * S), 16 * S, 10 * S);
+  }
+  function drawDog() {
+    const pose = dog.dogPose;
+    const f = pose === 'walk' ? Math.floor(dog.dist / 3) % 2 : Math.floor(dog.anim * 4) % 2; // sitting: tail wags
+    const img = Sprites.dog(pose, f, dog.face < 0 ? -1 : 1);
+    spr(img, Math.round((dog.x - 8) * S), Math.round((dog.y - 10) * S), 16 * S, 10 * S);
   }
   function drawCatClimb() {
     const img = Sprites.catClimb(Math.floor(cat.climbDist / 3) % 2);
@@ -1586,8 +1743,9 @@
     ctx.translate(0, TOP * S);
     drawPlane();
     drawCat();
-    const people = [qwen, ...subs, ...helpers, claude].sort((a, b) => a.y - b.y);
-    Light.shadows(ctx, S, [...people, cat]);
+    drawDog();
+    const people = [qwen, ...subs, ...helpers, ...guests.filter((g) => g.inside), claude].sort((a, b) => a.y - b.y);
+    Light.shadows(ctx, S, [...people, cat, dog]);
     for (const a of people) drawAgent(a);
     ctx.drawImage(Scene.fg, 0, -TOP * S, W * S, H * S);
     drawBall();
@@ -1613,7 +1771,7 @@
     if (now < scene.flickerUntil && Math.sin(now * 37) > 0) rect(6, -64, 244, 256, 'rgba(0,0,12,0.6)');
 
     drawRain();
-    for (const a of npcs) drawNpc(a); // street people walk in front of the building
+    for (const a of [...npcs, ...guests.filter((g) => !g.inside)]) drawNpc(a); // street people walk in front of the building
     if (scene.carX !== null) {
       // the road is nearer than the sidewalk, so the car passes in front of people
       const night = Scene.nightness(new Date().getHours() + new Date().getMinutes() / 60) > 0;
@@ -1621,7 +1779,7 @@
     }
     drawTpsSign();
     drawToolSign();
-    drawBubbles([...npcs, cat, ...subs, ...helpers, qwen, claude]);
+    drawBubbles([...npcs, ...guests, cat, dog, ...subs, ...helpers, qwen, claude]);
     ctx.restore();
     ctx.restore(); // camera
 
@@ -1764,7 +1922,9 @@
   // Test hooks for the devtools / built-in browser: __office.fun('pong'), __office.spawnNpc('pizza'), __office.launchPlane()...
   window.__office = {
     handle, runDemo, setSaver, shot, runner: Runner, runOut, backIn,
-    step: (sec) => { for (let i = 0; i < sec * 60; i++) update(1 / 60); render(); }, // fast-forward (for a hidden preview) cam, camRoom, startFun, stopFun, spawnNpc, launchPlane, randomEvents, scene, npcs: () => npcs, who: () => ({ claude, qwen, cat, helpers, subs }),
+    step: (sec) => { for (let i = 0; i < sec * 60; i++) update(1 / 60); render(); }, // fast-forward (for a hidden preview)
+    cam, camRoom, startFun, stopFun, spawnNpc, launchPlane, randomEvents, scene, npcs: () => npcs, who: () => ({ claude, qwen, cat, dog, helpers, subs, guests }),
+    guest: spawnGuest, play: startPlay,
     fun: (id, who = claude) => { stopFun(who); startFun(who, id ? ACTS.find((x) => x.id === id) : undefined); },
     weather, poke, feel: (who, e, sec = 3) => (who || claude).feel(e, sec), act,
     flicker: () => { scene.flickerUntil = now + 1.4; Sound.zap(); },
@@ -1776,6 +1936,8 @@
       fun: [...fun].map(([b, f]) => `${b.look.name}:${f.act.id}`),
       pong: { on: pong.on, seg: pong.seg, score: pong.score },
       npcs: npcs.map((n) => `${n.kind}@${Math.round(n.x)}`),
+      guests: guests.map((g) => `${g.inside ? 'in' : 'out'}@${g.f}:${Math.round(g.x)}`),
+      dog: { x: Math.round(dog.x), pose: dog.dogPose, play: play.on }, cat: { x: Math.round(cat.x), f: cat.f, pose: cat.catPose },
       plane: scene.plane && Math.round(scene.plane.x),
       subs: subs.length,
       helpers: helpers.map((h) => `${h.look.name}@${h.f}:${Math.round(h.x)}${h.leaving ? ' leaving' : ''}`),

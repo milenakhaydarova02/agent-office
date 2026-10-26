@@ -783,6 +783,53 @@ const Sprites = (() => {
     return big;
   }
 
+  // ---- dog ------------------------------------------------------------------
+  // Same 16×10 box as the cat, faces right; a ginger mutt with a dark floppy ear.
+  function drawDog(pose, f) {
+    const cv = document.createElement('canvas');
+    cv.width = 16;
+    cv.height = 10;
+    const g = cv.getContext('2d');
+    const R = (x, y, w, h, c) => { g.fillStyle = c; g.fillRect(x, y, w, h); };
+    const fur = '#c88a50', furD = '#8a5a30', furL = '#ecc090', ear = '#5a3820', nose = '#140c1c';
+    if (pose === 'sleep') {
+      R(2, 6, 11, 3, fur); R(3, 5, 7, 1, fur); R(3, 8, 9, 1, furL);
+      R(10, 5, 5, 4, fur); R(10, 5, 2, 3, ear); R(14, 7, 2, 2, furL); R(15, 7, 1, 1, nose);
+      R(0, 7, 2, 1, furD);
+    } else if (pose === 'sit') {
+      R(5, 4, 5, 5, fur); R(9, 5, 2, 4, furL); R(5, 9, 7, 1, furL);
+      R(8, 0, 6, 4, fur); R(13, 2, 2, 2, furL); R(14, 2, 1, 1, nose); R(8, 0, 2, 4, ear);
+      R(10, 8, 1, 2, furD); R(12, 8, 1, 2, furD);
+      R(2, 7, 3, 1, furD); R(2, 6 - (f % 2), 1, 1, furD);
+    } else {
+      const a = f % 2 === 0;
+      R(2, 4, 9, 4, fur); R(3, 7, 7, 1, furL); R(5, 4, 1, 3, furD);
+      R(10, 1, 5, 4, fur); R(14, 3, 2, 2, furL); R(15, 3, 1, 1, nose); R(10, 1, 2, 3, ear);
+      R(0, a ? 2 : 3, 2, 1, furD); R(1, a ? 3 : 4, 1, 1, furD);
+      R(a ? 3 : 4, 8, 1, 2, furD); R(a ? 9 : 8, 8, 1, 2, furD); R(a ? 5 : 4, 8, 1, 2, fur); R(a ? 10 : 11, 8, 1, 2, fur);
+    }
+    const big = upscale(cv);
+    bevel(big, [[fur, furL, furD]]);
+    const G = big.getContext('2d');
+    const P = (x, y, w, h, c) => { G.fillStyle = c; G.fillRect(x, y, w, h); };
+    if (pose === 'sit') { P(24, 2, 2, 2, nose); P(24, 2, 1, 1, '#f8f8f8'); }
+    else if (pose === 'sleep') P(25, 13, 3, 1, '#5a3820');
+    else { P(25, 4, 2, 2, nose); P(25, 4, 1, 1, '#f8f8f8'); if (f % 2) P(28, 9, 2, 2, '#f87090'); }
+    outline(big);
+    return big;
+  }
+
+  function dog(pose, f, face) {
+    const key = `dog|${pose}|${f}|${face}`;
+    let s = cache.get(key);
+    if (!s) {
+      const base = drawDog(pose, f);
+      s = face < 0 ? mirror(base) : base;
+      cache.set(key, s);
+    }
+    return s;
+  }
+
   const SEATED = ['sit', 'type', 'sleep', 'think'];
   const BREATHE = ['stand', 'sit', 'think', 'sleep', 'type', 'look', 'term'];
   // Chest rise: everything above the hips drops one sprite pixel.
@@ -820,5 +867,5 @@ const Sprites = (() => {
     return s;
   }
 
-  return { person, cat, catClimb, outfit };
+  return { person, cat, catClimb, dog, outfit };
 })();

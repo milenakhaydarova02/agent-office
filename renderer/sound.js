@@ -10,7 +10,7 @@ const Sound = (() => {
   let muted = false;
   let suspended = false; // silenced by screensaver mode without touching the user's choice
   let game = false;      // runner mini-game on: the office goes quiet, only these play
-  const GAME = new Set(['jump', 'coin', 'crash', 'jingle', 'ring']);
+  const GAME = new Set(['jump', 'coin', 'crash', 'jingle', 'ring', 'shot', 'rocket']);
   let amb = null;        // ambience bus (hum, fans, rain)
   try { muted = localStorage.getItem('office.muted') === '1'; } catch {}
   const lastAt = {};
@@ -166,6 +166,42 @@ const Sound = (() => {
     return { s };
   };
 
+  // Runner music: a quiet chiptune loop (Am - F - C - G), scheduled a little ahead of time.
+  const CHORDS = [[57, 60, 64], [53, 57, 60], [48, 52, 55], [55, 59, 62]];
+  const LEAD = [76, 0, 0, 74, 72, 0, 74, 0, 72, 0, 69, 0, 0, 0, 0, 0];
+  const midi = (n) => 440 * Math.pow(2, (n - 69) / 12);
+  const STEP16 = 0.16;
+  let music = null;
+  function musicTick() {
+    if (!music) return;
+    while (music.at < ctx.currentTime + 0.35) {
+      const i = music.step % 64, bar = Math.floor(i / 16), s = i % 16, ch = CHORDS[bar];
+      const d = Math.max(0, music.at - ctx.currentTime), out = music.out;
+      if (s % 8 === 0) tone(midi(ch[0] - 24), STEP16 * 7, 'triangle', 0.06, null, d, out);
+      if (s % 2 === 0) tone(midi(ch[(s / 2) % 3] + 12), STEP16 * 1.6, 'square', 0.008, null, d, out);
+      if (s % 4 === 2) noise(0.03, 0.006, 7000, d, 'highpass');
+      if (bar % 2 === 1 && LEAD[s]) tone(midi(LEAD[s]), STEP16 * 2.5, 'triangle', 0.02, null, d, out);
+      music.at += STEP16;
+      music.step++;
+    }
+  }
+  function setMusic(on) {
+    if (!ctx) return;
+    if (on && !music) {
+      const out = ctx.createGain();
+      out.gain.value = 0.0001;
+      out.gain.setTargetAtTime(1, ctx.currentTime, 0.6);
+      out.connect(master);
+      music = { out, at: ctx.currentTime + 0.1, step: 0, timer: setInterval(musicTick, 100) };
+    } else if (!on && music) {
+      const m = music;
+      music = null;
+      clearInterval(m.timer);
+      m.out.gain.setTargetAtTime(0, ctx.currentTime, 0.15);
+      setTimeout(() => m.out.disconnect(), 1500);
+    }
+  }
+
   return {
     init,
     get muted() { return muted; },
@@ -177,6 +213,7 @@ const Sound = (() => {
     setGame(on) {
       game = on;
       if (amb) amb.gain.setTargetAtTime(on ? 0 : 1, ctx.currentTime, 0.15);
+      setMusic(on);
     },
     setSuspended(s) {
       suspended = s;
@@ -311,6 +348,24 @@ const Sound = (() => {
     jump() { if (ready('jump', 80)) tone(330, 0.14, 'square', 0.035, 760); },
     coin() { if (ready('coin', 60)) { tone(988, 0.06, 'square', 0.03); tone(1319, 0.14, 'square', 0.03, null, 0.06); } },
     crash() { if (ready('crash', 400)) { noise(0.25, 0.1, 700, 0, 'lowpass', 0.7); tone(220, 0.35, 'square', 0.04, 70); } },
+    shot() {
+      if (!ready('shot', 120)) return;
+      noise(0.05, 0.12, 4500, 0, 'highpass');
+      noise(0.3, 0.13, 900, 0, 'lowpass', 0.6);
+      thud(150, 45, 0.18, 0.13);
+      [0.18, 0.3].forEach((d) => noise(0.02, 0.03, 2500, d, 'bandpass', 2)); // pump: click-clack
+    },
+    rocket() {
+      if (!ready('rocket', 1000)) return;
+      noise(1.2, 0.07, 800, 0, 'bandpass', 0.5);
+      tone(110, 1.0, 'sawtooth', 0.02, 380);
+    },
+    // dog: two short barks
+    bark() {
+      if (!ready('bark', 1500)) return;
+      voice(330, 230, 0.16, 800, 1300, 0.08);
+      setTimeout(() => { if (ctx && !game) voice(350, 240, 0.14, 850, 1350, 0.07); }, 230);
+    },
     cheer() { if (ready('cheer', 800)) [784, 988, 1319, 1568].forEach((f, i) => bell(f, 0.5, 0.05, i * 0.07)); },
   };
 })();
